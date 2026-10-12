@@ -70,7 +70,7 @@ namespace CellularGarden {
             Cells=new byte[Width*Height];Ghosts=new byte[Cells.Length];next=new byte[Cells.Length];
             Checkpoint();
         }
-        public void Paint(int x,int y,bool erase){if(x<0||y<0||x>=Width||y>=Height)return;Cells[y*Width+x]=(byte)(erase?0:1);Ghosts[y*Width+x]=0;}
+        public void Paint(int x,int y,bool erase){if(x<0||y<0||x>=Width||y>=Height)return;int i=y*Width+x;byte value=(byte)(erase?0:1);Population+=value-Cells[i];Cells[i]=value;Ghosts[i]=0;}
         public void EnsureBounds(Rectangle visible){
             if(Bounds.Contains(visible))return;
             Rectangle expanded=Rectangle.Union(Bounds,visible),old=Bounds;
@@ -84,7 +84,7 @@ namespace CellularGarden {
             }
             Generation=generation;Count();History.Clear();Record();
         }
-        public void PaintLine(int x0,int y0,int x1,int y1,bool erase){int steps=Math.Max(1,Math.Max(Math.Abs(x1-x0),Math.Abs(y1-y0)));for(int s=0;s<=steps;s++)Paint((int)Math.Round(x0+(x1-x0)*(double)s/steps),(int)Math.Round(y0+(y1-y0)*(double)s/steps),erase);Count();}
+        public void PaintLine(int x0,int y0,int x1,int y1,bool erase){int steps=Math.Max(1,Math.Max(Math.Abs(x1-x0),Math.Abs(y1-y0)));for(int s=0;s<=steps;s++)Paint((int)Math.Round(x0+(x1-x0)*(double)s/steps),(int)Math.Round(y0+(y1-y0)*(double)s/steps),erase);}
         public static readonly string[][] Patterns={
             new[]{".O.","..O","OOO"},
             new[]{"..OOO...OOO..",".............","O....O.O....O","O....O.O....O","O....O.O....O","..OOO...OOO..",".............","..OOO...OOO..","O....O.O....O","O....O.O....O","O....O.O....O",".............","..OOO...OOO.."},

@@ -62,12 +62,12 @@ namespace CellularGarden {
             Native.SetParent(hwnd,Parent);
             if(Native.GetParent(hwnd)!=Parent){LastError="无法连接到桌面层（"+Marshal.GetLastWin32Error()+"）。";return false;}
             if(Raised)Native.SetLayeredWindowAttributes(hwnd,0,255,2);
-            Position(form,bounds);LastError="";return true;
+            Position(form,bounds,true);LastError="";return true;
         }
-        internal void Position(Form form,Rectangle bounds){
+        internal void Position(Form form,Rectangle bounds,bool frameChanged=false){
             if(!Healthy(form))return;
             Point p=bounds.Location;Native.ScreenToClient(Parent,ref p);
-            Native.SetWindowPos(form.Handle,Raised?IconLayer:IntPtr.Zero,p.X,p.Y,bounds.Width,bounds.Height,0x0010|0x0020|0x0040);
+            Native.SetWindowPos(form.Handle,Raised?IconLayer:IntPtr.Zero,p.X,p.Y,bounds.Width,bounds.Height,0x0010u|0x0040u|(frameChanged?0x0020u:0u));
         }
         internal bool Healthy(Form form){return form!=null&&!form.IsDisposed&&Native.IsWindow(Parent)&&Native.GetParent(form.Handle)==Parent&&(!Raised||Native.IsWindow(IconLayer));}
     }

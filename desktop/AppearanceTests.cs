@@ -47,6 +47,9 @@ namespace CellularGarden {
                     using(var shifted=Render(appearance,settings,world,moved,new Size(640,360),Point.Empty))check(shifted.GetPixel(202,102).ToArgb()==frost.ToArgb(),"frosted empty background stays fixed during pan and zoom");
                     using(var offset=Render(appearance,settings,world,offsetView,new Size(600,360),new Point(40,0)))check(offset.GetPixel(162,102).ToArgb()==frost.ToArgb(),"frosted background aligns between controller and desktop");
                     check(object.ReferenceEquals(appearance.FrostedImage(new Size(640,360),bg),appearance.FrostedImage(new Size(640,360),bg)),"blur is cached across simulation frames");
+                    settings.Trails=true;int brushBuilds=appearance.TextureBuilds;var renderTimer=System.Diagnostics.Stopwatch.StartNew();
+                    for(int frame=0;frame<12;frame++)using(var repeated=Render(appearance,settings,world,offsetView,new Size(600,360),new Point(40,0))){}
+                    renderTimer.Stop();check(appearance.TextureBuilds==brushBuilds,"repeated frames reuse live and ghost image brushes (12 frames: "+renderTimer.ElapsedMilliseconds+" ms)");
                     bool failed=false;try{appearance.Import(Path.Combine(dir,"missing.png"));}catch{failed=true;}check(failed&&appearance.HasImage&&settings.ImageBackgroundLight=="#141E28","failed import preserves existing picture and manual colour");
                 }
                 using(var restored=new WallpaperAppearance(settings,imported))check(restored.HasImage&&restored.Background(new Palette(false)).ToArgb()==Color.FromArgb(20,30,40).ToArgb(),"stored wallpaper reloads with manual base colour");

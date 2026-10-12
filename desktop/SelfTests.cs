@@ -8,9 +8,10 @@ using System.Drawing;
 namespace CellularGarden {
     internal static class SelfTests {
         private static List<string> results=new List<string>();
-        private static void Check(bool ok,string name){if(!ok)throw new Exception("FAIL: "+name);results.Add("PASS: "+name);}
+        private static void Check(bool ok,string name){if(!ok)throw new Exception("FAIL: "+name);results.Add("PASS: "+name);File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-results.txt"),"PASS: "+name+Environment.NewLine);}
         private static Universe Grid(params int[] points){var u=new Universe(9,9,42);u.Wrap=false;for(int i=0;i<points.Length;i+=2)u.Paint(points[i],points[i+1],false);u.Checkpoint();return u;}
         internal static void Run(){
+            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-results.txt"),"");
             var block=Grid(3,3,3,4,4,3,4,4);var before=(byte[])block.Cells.Clone();for(int i=0;i<10;i++)block.Step();Check(block.Cells.SequenceEqual(before),"still life remains stable");
             var blinker=Grid(3,4,4,4,5,4);before=(byte[])blinker.Cells.Clone();blinker.Step();Check(blinker.Cells.SequenceEqual(Grid(4,3,4,4,4,5).Cells),"oscillator first step");blinker.Step();Check(blinker.Cells.SequenceEqual(before),"oscillator period 2");
             var glider=Grid(2,1,3,2,1,3,2,3,3,3);for(int i=0;i<4;i++)glider.Step();Check(glider.Cells.SequenceEqual(Grid(3,2,4,3,2,4,3,4,4,4).Cells),"glider translation after 4 steps");
@@ -74,6 +75,7 @@ namespace CellularGarden {
                 s.StepSeconds=30;s.RenewRepeating=true;s.RenewTimed=false;s.RepeatSeconds=90;s.RenewMinutes=12;s.Save();loaded=Settings.Load();Check(loaded.StepInterval==30&&loaded.RenewRepeating==true&&loaded.RenewTimed==false&&loaded.RepeatDelay==90&&loaded.TimedDelay==12,"slow speed and independent renewal settings survive restart");
                 File.WriteAllText(Settings.FilePath,"invalid");Check(Settings.Load().Speed==8,"corrupt preferences recover defaults");}finally{if(File.Exists(Settings.FilePath))File.Delete(Settings.FilePath);Settings.FilePath=oldPath;}
             AppearanceTests.Run(Check);
+            InteractionTests.Run(Check);
             u.Randomize();var timer=Stopwatch.StartNew();for(int i=0;i<300;i++)u.Step();timer.Stop();results.Add("BENCH: 160 x 90, 300 generations in "+timer.ElapsedMilliseconds+" ms");
             File.WriteAllLines(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-results.txt"),results);
         }

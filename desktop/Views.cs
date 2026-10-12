@@ -31,6 +31,8 @@ namespace CellularGarden {
         internal bool Interactive, Erase, MoveTool;
         private bool painting,panning;
         private Point previous, panStart;
+        internal readonly InputShield Input=new InputShield();
+        private Point previousPixel;
         internal GardenCanvas(GardenContext app,bool interactive){App=app;Interactive=interactive;Dock=DockStyle.Fill;TabStop=interactive;SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);Cursor=interactive?Cursors.Cross:Cursors.Default;AccessibleName="生命画布";}
         internal Viewport View {
             get {
@@ -48,14 +50,15 @@ namespace CellularGarden {
             if(Interactive){using(var f=new Font("Microsoft YaHei UI",10))using(var b=new SolidBrush(p.Muted)){string text="左键绘制 / 右键拖动画面 / 滚轮缩放     ·     Esc 返回壁纸     ·     Tab 收起面板";var sz=g.MeasureString(text,f);using(var bg=new SolidBrush(p.Panel))g.FillRectangle(bg,Math.Max(12,Width-sz.Width-36),Height-48,sz.Width+24,32);g.DrawString(text,f,b,Math.Max(24,Width-sz.Width-24),Height-41);}}
             base.OnPaint(e);
         }
-        protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(!Interactive)return;Focus();Capture=true;panStart=e.Location;
+        internal void Protect(Rectangle panel){Input.Viewport=ClientRectangle;Input.Panel=panel;var old=Region;var region=new Region(ClientRectangle);if(!panel.IsEmpty)region.Exclude(panel);Region=region;if(old!=null)old.Dispose();if(!Input.Allows(PointToClient(MousePosition)))Finish();}
+        protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(!Interactive||!Input.Allows(e.Location)||(e.Button!=MouseButtons.Left&&e.Button!=MouseButtons.Right&&e.Button!=MouseButtons.Middle))return;Focus();Capture=true;panStart=previousPixel=e.Location;
             if(e.Button==MouseButtons.Right||e.Button==MouseButtons.Middle||MoveTool){panning=true;Cursor=Cursors.Hand;return;}
-            if(e.Button!=MouseButtons.Left)return;App.Running=false;App.World.EnsureBounds(View.VisibleCells);painting=true;previous=Cell(e.Location);App.World.Paint(previous.X,previous.Y,Erase);App.World.Count();App.Changed();}
-        protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);if(panning){App.Settings.PanX=Math.Max(-4000,Math.Min(4000,App.Settings.PanX+e.X-panStart.X));App.Settings.PanY=Math.Max(-4000,Math.Min(4000,App.Settings.PanY+e.Y-panStart.Y));panStart=e.Location;App.Redraw();}else if(painting){Point p=Cell(e.Location);App.World.PaintLine(previous.X,previous.Y,p.X,p.Y,Erase);previous=p;App.Changed();}}
+            if(e.Button!=MouseButtons.Left)return;App.Running=false;App.World.EnsureBounds(View.VisibleCells);painting=true;previous=Cell(e.Location);App.World.Paint(previous.X,previous.Y,Erase);App.Changed();}
+        protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);if(!Interactive)return;if(!Input.Allows(e.Location)||((painting||panning)&&!Input.AllowsStroke(previousPixel,e.Location))){Finish();return;}previousPixel=e.Location;if(panning){App.Settings.PanX=Math.Max(-4000,Math.Min(4000,App.Settings.PanX+e.X-panStart.X));App.Settings.PanY=Math.Max(-4000,Math.Min(4000,App.Settings.PanY+e.Y-panStart.Y));panStart=e.Location;App.Redraw();}else if(painting){Point p=Cell(e.Location);App.World.PaintLine(previous.X,previous.Y,p.X,p.Y,Erase);previous=p;App.Redraw();App.RefreshController(false);}}
         protected override void OnMouseUp(MouseEventArgs e){Finish();base.OnMouseUp(e);}
         protected override void OnMouseCaptureChanged(EventArgs e){if(!Capture)Finish();base.OnMouseCaptureChanged(e);}
-        private void Finish(){bool wasPainting=painting;painting=false;panning=false;Capture=false;Cursor=MoveTool?Cursors.Hand:Cursors.Cross;if(wasPainting){App.World.Checkpoint();App.Changed();}}
-        protected override void OnMouseWheel(MouseEventArgs e){base.OnMouseWheel(e);if(!Interactive)return;App.Settings.Zoom=Math.Max(.5f,Math.Min(3f,App.Settings.Zoom+(e.Delta>0?.1f:-.1f)));App.Changed();}
+        internal void Finish(){bool wasPainting=painting;painting=false;panning=false;if(Capture)Capture=false;Cursor=Interactive?(MoveTool?Cursors.Hand:Cursors.Cross):Cursors.Default;if(wasPainting){App.World.Checkpoint();App.Changed();}}
+        protected override void OnMouseWheel(MouseEventArgs e){if(!Interactive||!Input.Allows(PointToClient(MousePosition)))return;base.OnMouseWheel(e);App.Settings.Zoom=Math.Max(.5f,Math.Min(3f,App.Settings.Zoom+(e.Delta>0?.1f:-.1f)));App.Changed();}
     }
     internal sealed class WallpaperForm:Form {
         internal GardenCanvas Canvas;
@@ -80,18 +83,27 @@ namespace CellularGarden {
         private ComboBox speedUnit;
         private SpeedInput speedInput;
         private HistoryView chart;
-        private bool syncing, dragging;
+        private bool syncing;
         private Point dragPoint;
+        private PanelDragHandle dragHandle;
+        private readonly System.Diagnostics.Stopwatch infoClock=System.Diagnostics.Stopwatch.StartNew();
+        private long lastInfo;
+        internal bool DraggingPanel {get{return dragHandle!=null&&dragHandle.Dragging;}}
         private float uiScale=1;
         private readonly ToolTip tip=new ToolTip();
         internal Controller(GardenContext context){
             app=context;Text="细胞花园 · 控制模式";AutoScaleMode=AutoScaleMode.None;Font=new Font("Microsoft YaHei UI",9);FormBorderStyle=FormBorderStyle.None;StartPosition=FormStartPosition.Manual;KeyPreview=true;ShowInTaskbar=true;Icon=app.AppIcon;Bounds=app.Screen.WorkingArea;MinimumSize=new Size(700,600);
             using(var graphics=CreateGraphics())uiScale=Math.Max(1,graphics.DpiX/96f);
             Canvas=new GardenCanvas(app,true);Controls.Add(Canvas);
-            dock=new Panel {Width=348,BorderStyle=BorderStyle.FixedSingle,Location=new Point(24,24),Anchor=AnchorStyles.Top|AnchorStyles.Left};Controls.Add(dock);dock.BringToFront();
-            content=new FlowLayoutPanel {Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,Padding=new Padding(20,16,14,14)};dock.Controls.Add(content);
-            var header=Label("细胞花园",19,false,32);header.Cursor=Cursors.SizeAll;header.MouseDown+=delegate(object s,MouseEventArgs e){dragging=true;dragPoint=Cursor.Position;header.Capture=true;};header.MouseMove+=delegate{if(!dragging)return;Point pos=Cursor.Position;dock.Left=Math.Max(0,Math.Min(ClientSize.Width-dock.Width,dock.Left+pos.X-dragPoint.X));dock.Top=Math.Max(0,Math.Min(ClientSize.Height-100,dock.Top+pos.Y-dragPoint.Y));dragPoint=pos;};header.MouseUp+=delegate{dragging=false;header.Capture=false;};header.MouseCaptureChanged+=delegate{if(!header.Capture)dragging=false;};
-            Label("DESKTOP LAB  /  控制模式",8,true,22);
+            Cursor=Cursors.Default;
+            dock=new SolidPanel {Width=348,BorderStyle=BorderStyle.FixedSingle,Location=new Point(24,24),Anchor=AnchorStyles.Top|AnchorStyles.Left};Controls.Add(dock);dock.BringToFront();
+            content=new FlowLayoutPanel {Dock=DockStyle.Fill,Cursor=Cursors.Default,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=true,Padding=new Padding(20,12,14,14)};dock.Controls.Add(content);
+            dragHandle=new PanelDragHandle{Dock=DockStyle.Top,Height=70};dock.Controls.Add(dragHandle);
+            dragHandle.DragStarted+=delegate{Canvas.Finish();dragPoint=dock.Location;};
+            dragHandle.Dragged+=delegate(Point delta){dock.Location=InputShield.ClampPanel(new Point(dragPoint.X+delta.X,dragPoint.Y+delta.Y),dock.Size,ClientSize);};
+            dragHandle.DragFinished+=delegate{app.ResetClock();app.Redraw();};
+            dock.LocationChanged+=delegate{ShieldCanvas();};dock.VisibleChanged+=delegate{ShieldCanvas();};Canvas.SizeChanged+=delegate{ShieldCanvas();};
+            Deactivate+=delegate{dragHandle.EndDrag();Canvas.Finish();};
             state=Label("",9,true,28);
             FlowLayoutPanel transport=Row(42);play=Button(transport,"暂停演化",126,delegate{app.Toggle();});Button(transport,"下一代",76,delegate{app.Step();});Button(transport,"重置",58,delegate{app.World.Reset();app.Running=false;app.Changed();});
             var speedRow=Row(42);speedRow.Controls.Add(new Label {Text="速度",Width=36,Height=32,TextAlign=ContentAlignment.MiddleLeft});
@@ -99,7 +111,7 @@ namespace CellularGarden {
             speedInput=new SpeedInput{Minimum=EvolutionSpeed.Minimum(seconds),Maximum=EvolutionSpeed.Maximum(seconds),DecimalPlaces=6,Increment=.1m,Value=EvolutionSpeed.DisplayValue(app.Settings.StepInterval,seconds),Width=132,AccessibleName="演化速度"};speedRow.Controls.Add(speedInput);
             speedUnit=new ComboBox{Width=98,DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat,AccessibleName="速度单位"};speedUnit.Items.AddRange(new[]{"秒/代","代/秒"});speedUnit.SelectedIndex=seconds?0:1;speedRow.Controls.Add(speedUnit);
             tip.SetToolTip(speedInput,"直接输入数值，按 Enter 或离开输入框生效；支持小数。范围：每 60 秒一代至每秒 30 代。");
-            speedInput.ValueChanged+=delegate{if(speedSync)return;app.Settings.StepSeconds=EvolutionSpeed.Interval(speedInput.Value,seconds);app.ResetClock();app.Save();};
+            speedInput.ValueChanged+=delegate{if(speedSync)return;app.Settings.StepSeconds=EvolutionSpeed.Interval(speedInput.Value,seconds);app.ResetClock();app.RequestSave();};
             speedUnit.SelectedIndexChanged+=delegate{speedSync=true;seconds=speedUnit.SelectedIndex==0;speedInput.Minimum=EvolutionSpeed.Minimum(seconds);speedInput.Maximum=EvolutionSpeed.Maximum(seconds);speedInput.Value=EvolutionSpeed.DisplayValue(app.Settings.StepInterval,seconds);speedSync=false;};
             FormClosing+=delegate{speedInput.Commit();};
             stats=Label("",10,false,26);chart=new HistoryView(app){Width=286,Margin=new Padding(0,0,0,10)};content.Controls.Add(chart);
@@ -127,7 +139,8 @@ namespace CellularGarden {
             rule.AccessibleName="演化规则";monitor.AccessibleName="壁纸显示器";
             Resize+=delegate{LayoutPanel();};FormClosed+=delegate{app.ControllerClosed();tip.Dispose();};LayoutPanel();ApplyTheme();RefreshInfo();
         }
-        private void LayoutPanel(){dock.Height=Math.Max(300,ClientSize.Height-(int)(48*uiScale));dock.Left=Math.Max(0,Math.Min(dock.Left,ClientSize.Width-dock.Width));dock.Top=Math.Max(0,Math.Min(dock.Top,ClientSize.Height-dock.Height));}
+        private void LayoutPanel(){dock.Height=Math.Min((int)(720*uiScale),Math.Max(220,ClientSize.Height-(int)(48*uiScale)));dock.Location=InputShield.ClampPanel(dock.Location,dock.Size,ClientSize);ShieldCanvas();}
+        private void ShieldCanvas(){if(dock==null||Canvas==null||Canvas.IsDisposed)return;Canvas.Protect(dock.Visible?new Rectangle(dock.Left-Canvas.Left,dock.Top-Canvas.Top,dock.Width,dock.Height):Rectangle.Empty);}
         private Label Label(string text,float size,bool muted,int height){var l=new Label{Text=text,Font=new Font("Microsoft YaHei UI",size),Width=286,Height=height,Margin=new Padding(0,0,0,3),Tag=muted?"muted":"text"};content.Controls.Add(l);return l;}
         private void Section(string title){var l=Label(title,9,false,30);l.Padding=new Padding(0,8,0,0);}
         private FlowLayoutPanel Row(int height){var row=new FlowLayoutPanel{Width=290,Height=height,Margin=new Padding(0),Padding=new Padding(0),WrapContents=false};content.Controls.Add(row);return row;}
@@ -139,8 +152,8 @@ namespace CellularGarden {
         private void StyleBrush(){draw.BackColor=!Canvas.Erase&&!Canvas.MoveTool?app.ControlsPalette.Accent:app.ControlsPalette.Surface;erase.BackColor=Canvas.Erase?app.ControlsPalette.Accent:app.ControlsPalette.Surface;move.BackColor=Canvas.MoveTool?app.ControlsPalette.Accent:app.ControlsPalette.Surface;draw.ForeColor=!Canvas.Erase&&!Canvas.MoveTool?app.ControlsPalette.OnAccent:app.ControlsPalette.Text;erase.ForeColor=Canvas.Erase?app.ControlsPalette.OnAccent:app.ControlsPalette.Text;move.ForeColor=Canvas.MoveTool?app.ControlsPalette.OnAccent:app.ControlsPalette.Text;}
         internal void ApplyTheme(){Apply(this);StyleBrush();RefreshInfo();Canvas.Invalidate();}
         private void Apply(Control c){c.BackColor=c is Button||c is ComboBox?app.ControlsPalette.Surface:app.ControlsPalette.Panel;c.ForeColor=(string)c.Tag=="muted"?app.ControlsPalette.Muted:app.ControlsPalette.Text;if(c is Button)((Button)c).FlatAppearance.BorderColor=app.ControlsPalette.Line;foreach(Control child in c.Controls)Apply(child);}
-        internal void RefreshInfo(){
-            if(IsDisposed)return;syncing=true;
+        internal void RefreshInfo(bool force=true){
+            if(IsDisposed||(!force&&(DraggingPanel||infoClock.ElapsedMilliseconds-lastInfo<150)))return;lastInfo=infoClock.ElapsedMilliseconds;syncing=true;
             play.Text=app.Running?"Ⅱ  暂停演化":"▶  开始演化";play.BackColor=app.ControlsPalette.Accent;play.ForeColor=app.ControlsPalette.OnAccent;
             state.Text=app.Attached?"●  已连接桌面  /  "+(app.Running?"自动演化中":"已暂停"):"○  预览模式 · 桌面连接待重试";
             tip.SetToolTip(state,app.LastError);stats.Text="第 "+app.World.Generation.ToString("N0")+" 代    ·    "+app.World.Population.ToString("N0")+" 个细胞    ·    "+(100.0*app.World.Population/app.World.Cells.Length).ToString("F1")+"%";
@@ -149,7 +162,7 @@ namespace CellularGarden {
         protected override bool ProcessCmdKey(ref Message msg,Keys keyData){
             if(keyData==Keys.Escape){Close();return true;}
             if(speedInput.ContainsFocus&&keyData==Keys.Enter){speedInput.Commit();return true;}
-            if(theme.Focused||rule.Focused||monitor.Focused||speedUnit.Focused||content.Controls.OfType<FlowLayoutPanel>().Any(row=>row.Controls.OfType<NumericUpDown>().Any(input=>input.ContainsFocus)))return base.ProcessCmdKey(ref msg,keyData);
+            if(dock.ContainsFocus)return base.ProcessCmdKey(ref msg,keyData);
             if(keyData==Keys.Tab){dock.Visible=!dock.Visible;Canvas.Focus();return true;}
             if(keyData==Keys.Space){app.Toggle();return true;}if(keyData==Keys.N){app.Step();return true;}if(keyData==Keys.R){app.Running=false;app.World.Reset();app.Changed();return true;}return base.ProcessCmdKey(ref msg,keyData);
         }

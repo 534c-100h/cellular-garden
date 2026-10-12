@@ -49,10 +49,14 @@ namespace CellularGarden {
         private double last,accumulator;
         private int maintenanceCount;
         private readonly RenewalClock renewal=new RenewalClock();
+        private SettingsWriter settingsWriter;
+        private double saveDue;
+        private Palette controlsPalette;
         internal Screen Screen {get{return Screen.AllScreens.FirstOrDefault(x=>x.DeviceName==Settings.Monitor)??Screen.PrimaryScreen;}}
         internal bool Attached {get{return wallpaper!=null&&host.Healthy(wallpaper);}}
         internal GardenContext(bool preview,bool control){
             previewOnly=preview;Settings=Settings.Load();World=new Universe(160,90);World.RuleIndex=Settings.RuleIndex;World.Wrap=Settings.Wrap;
+            settingsWriter=new SettingsWriter(delegate(Settings snapshot){snapshot.Save();},delegate(Exception e){LastError="偏好保存失败："+e.Message;Program.Log(e);});
             try{World.SetBounds(Settings.WorldBounds);World.Restore(Settings.Cells,Settings.Initial,Settings.Generation);}catch{SeedVisible();}Running=Settings.Running;
             dark=IsDark();Palette=new Palette(dark);Appearance=new WallpaperAppearance(Settings,Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"wallpaper-image.png"));AppIcon=MakeIcon();messages=new MessageWindow(this);
             bool hotkey=Native.RegisterHotKey(messages.Handle,1,0x4003,(uint)Keys.G);Native.RegisterHotKey(messages.Handle,2,0x4003,(uint)Keys.Space);
@@ -75,7 +79,7 @@ namespace CellularGarden {
             Changed();
         }
         internal void OpenController(){if(quitting)return;if(controller==null||controller.IsDisposed){controller=new Controller(this);controller.Show();}else{controller.Show();controller.WindowState=FormWindowState.Normal;}controller.Activate();controller.BringToFront();ResetClock();WriteStatus();}
-        internal void ControllerClosed(){controller=null;Save();ResetClock();WriteStatus();}
+        internal void ControllerClosed(){controller=null;Save();ResetClock();Redraw();WriteStatus();}
         internal void Toggle(){Running=!Running;ResetClock();Changed();Save();}
         internal void Step(){Running=false;World.Step();Changed();ResetClock();}
         internal void Pattern(int index){World.SetBounds(new Rectangle(0,0,160,90));World.Pattern(index);Running=false;Settings.Zoom=1;Settings.PanX=Settings.PanY=0;Changed();}
@@ -90,14 +94,17 @@ namespace CellularGarden {
         internal void RandomizeVisible(){SeedVisible();ResetClock();Changed();}
         internal void ResetClock(){last=clock.Elapsed.TotalMilliseconds;accumulator=0;}
         internal void Changed(){Redraw();if(controller!=null)controller.RefreshInfo();if(playback!=null)playback.Text=Running?"暂停演化   Ctrl+Alt+Space":"开始演化   Ctrl+Alt+Space";}
-        internal void Redraw(){if(wallpaper!=null&&!wallpaper.IsDisposed)wallpaper.Canvas.Invalidate();if(controller!=null&&!controller.IsDisposed)controller.Canvas.Invalidate();}
+        internal void RefreshController(bool force){if(controller!=null)controller.RefreshInfo(force);}
+        internal void Redraw(){bool controlling=controller!=null&&!controller.IsDisposed&&controller.Visible&&controller.WindowState!=FormWindowState.Minimized;if(wallpaper!=null&&!wallpaper.IsDisposed&&!controlling)wallpaper.Canvas.Invalidate();if(controlling)controller.Canvas.Invalidate();}
         private void Tick(){
             double now=clock.Elapsed.TotalMilliseconds,delta=Math.Min(200,now-last);last=now;
+            if(saveDue>0&&now>=saveDue){saveDue=0;Save();}
+            if(controller!=null&&controller.DraggingPanel){accumulator=0;return;}
             if(!Running||locked||suspended){accumulator=0;return;}accumulator+=delta;double interval=1000.0*Settings.StepInterval;bool updated=false;
             while(accumulator>=interval){World.Step();accumulator-=interval;updated=true;}
             if(renewal.Advance(delta/1000,controller==null,World.Repeating>0,Settings)){SeedVisible();updated=true;}
             if(updated){
-                Redraw();if(controller!=null)controller.RefreshInfo();
+                Redraw();RefreshController(false);
             }
         }
         private void Maintain(){
@@ -107,14 +114,15 @@ namespace CellularGarden {
             if(++maintenanceCount%5==0)Save();WriteStatus();
         }
         private bool IsFullscreenApp(){IntPtr fg=Native.GetForegroundWindow();if(fg==IntPtr.Zero||fg==host.Parent||fg==host.IconLayer||fg==Native.FindWindow("Progman",null)||Native.FindWindowEx(fg,IntPtr.Zero,"SHELLDLL_DefView",null)!=IntPtr.Zero||(wallpaper!=null&&fg==wallpaper.Handle)||Native.IsIconic(fg))return false;Native.RECT r;if(!Native.GetWindowRect(fg,out r))return false;Rectangle screen=Screen.Bounds;return r.Left<=screen.Left&&r.Top<=screen.Top&&r.Right>=screen.Right&&r.Bottom>=screen.Bottom;}
-        internal Palette ControlsPalette {get{return Appearance.ControlPalette(Palette);}}
-        internal void AppearanceUpdated(){if(controller!=null)controller.ApplyTheme();if(AppearanceChanged!=null)AppearanceChanged(this,EventArgs.Empty);Redraw();Save();}
-        internal void UpdateTheme(){bool next=IsDark();if(next==dark)return;dark=next;Palette=new Palette(dark);if(controller!=null)controller.ApplyTheme();if(AppearanceChanged!=null)AppearanceChanged(this,EventArgs.Empty);Redraw();}
+        internal Palette ControlsPalette {get{return controlsPalette??(controlsPalette=Appearance.ControlPalette(Palette));}}
+        internal void AppearanceUpdated(){controlsPalette=null;if(controller!=null)controller.ApplyTheme();if(AppearanceChanged!=null)AppearanceChanged(this,EventArgs.Empty);Redraw();RequestSave();}
+        internal void UpdateTheme(){bool next=IsDark();if(next==dark)return;dark=next;Palette=new Palette(dark);controlsPalette=null;if(controller!=null)controller.ApplyTheme();if(AppearanceChanged!=null)AppearanceChanged(this,EventArgs.Empty);Redraw();}
         private bool IsDark(){if(Settings.Theme!=0)return Settings.Theme==2;try{using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")){return Convert.ToInt32(key==null?1:key.GetValue("SystemUsesLightTheme",1))==0;}}catch{return false;}}
         private void SessionChanged(object sender,SessionSwitchEventArgs e){if(messages.IsDisposed)return;messages.BeginInvoke((Action)delegate{locked=e.Reason==SessionSwitchReason.SessionLock;if(e.Reason==SessionSwitchReason.SessionUnlock){locked=false;Reattach();}ResetClock();});}
         private void PowerChanged(object sender,PowerModeChangedEventArgs e){if(messages.IsDisposed)return;messages.BeginInvoke((Action)delegate{if(e.Mode==PowerModes.Suspend)locked=true;if(e.Mode==PowerModes.Resume){locked=false;Reattach();}ResetClock();});}
-        internal void Save(){try{Settings.RuleIndex=World.RuleIndex;Settings.Wrap=World.Wrap;Settings.Running=Running;Settings.Cells=(byte[])World.Cells.Clone();Settings.Initial=World.GetInitial();Settings.Generation=World.Generation;Settings.WorldWidth=World.Width;Settings.WorldHeight=World.Height;Settings.WorldLeft=World.Left;Settings.WorldTop=World.Top;Settings.Save();}catch(Exception e){LastError="偏好保存失败："+e.Message;Program.Log(e);}}
+        internal void RequestSave(){saveDue=clock.Elapsed.TotalMilliseconds+400;}
+        internal void Save(){try{saveDue=0;var snapshot=Settings.Copy();snapshot.RuleIndex=World.RuleIndex;snapshot.Wrap=World.Wrap;snapshot.Running=Running;snapshot.Cells=(byte[])World.Cells.Clone();snapshot.Initial=World.GetInitial();snapshot.Generation=World.Generation;snapshot.WorldWidth=World.Width;snapshot.WorldHeight=World.Height;snapshot.WorldLeft=World.Left;snapshot.WorldTop=World.Top;settingsWriter.Enqueue(snapshot);}catch(Exception e){LastError="偏好保存失败："+e.Message;Program.Log(e);}}
         private void WriteStatus(){try{string data="{\"attached\":"+Attached.ToString().ToLowerInvariant()+",\"running\":"+Running.ToString().ToLowerInvariant()+",\"controlMode\":"+(controller!=null).ToString().ToLowerInvariant()+",\"darkTheme\":"+dark.ToString().ToLowerInvariant()+",\"themePreference\":"+Settings.Theme+",\"generation\":"+World.Generation+",\"population\":"+World.Population+",\"suspended\":"+(locked||suspended).ToString().ToLowerInvariant()+",\"raisedDesktop\":"+host.Raised.ToString().ToLowerInvariant()+",\"wallpaperHandle\":"+(wallpaper==null?0:wallpaper.Handle.ToInt64())+",\"parentHandle\":"+host.Parent.ToInt64()+",\"updatedUtc\":\""+DateTime.UtcNow.ToString("o")+"\"}";File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"desktop-status.json"),data);}catch{}}
-        internal void Shutdown(){if(quitting)return;quitting=true;Save();tick.Stop();maintenance.Stop();SystemEvents.SessionSwitch-=SessionChanged;SystemEvents.PowerModeChanged-=PowerChanged;Native.UnregisterHotKey(messages.Handle,1);Native.UnregisterHotKey(messages.Handle,2);if(controller!=null)controller.Close();if(wallpaper!=null)wallpaper.Dispose();tray.Visible=false;tray.Dispose();messages.Dispose();tick.Dispose();maintenance.Dispose();AppIcon.Dispose();Appearance.Dispose();ExitThread();}
+        internal void Shutdown(){if(quitting)return;quitting=true;tick.Stop();maintenance.Stop();SystemEvents.SessionSwitch-=SessionChanged;SystemEvents.PowerModeChanged-=PowerChanged;Native.UnregisterHotKey(messages.Handle,1);Native.UnregisterHotKey(messages.Handle,2);if(controller!=null)controller.Close();Save();if(!settingsWriter.Flush(10000))Program.Log(new TimeoutException("等待偏好保存超时"));if(wallpaper!=null)wallpaper.Dispose();tray.Visible=false;tray.Dispose();messages.Dispose();tick.Dispose();maintenance.Dispose();AppIcon.Dispose();Appearance.Dispose();ExitThread();}
     }
 }

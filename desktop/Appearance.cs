@@ -11,6 +11,10 @@ namespace CellularGarden {
         private readonly Settings settings;
         internal readonly string ImagePath;
         private Bitmap source, screenImage, frostedImage;
+        private TextureBrush liveTexture;
+        private readonly TextureBrush[] ghostTextures=new TextureBrush[9];
+        private readonly Bitmap[] ghostImages=new Bitmap[9];
+        internal int TextureBuilds {get;private set;}
         private Color recommendedDark, recommendedLight, cachedBackground;
         internal string Error="";
         internal bool HasImage {get{return source!=null;}}
@@ -90,7 +94,23 @@ namespace CellularGarden {
         internal void SetBackground(bool dark,Color color){string hex=Hex(color);if(settings.AppearanceMode==1){if(dark)settings.ImageBackgroundDark=hex;else settings.ImageBackgroundLight=hex;}else{if(dark)settings.SolidBackgroundDark=hex;else settings.SolidBackgroundLight=hex;}}
         internal void SetCellColor(bool dark,Color color){if(dark)settings.SolidCellDark=Hex(color);else settings.SolidCellLight=Hex(color);}
         internal void ResetColors(bool dark){if(settings.AppearanceMode==1){if(dark)settings.ImageBackgroundDark=null;else settings.ImageBackgroundLight=null;}else if(dark){settings.SolidBackgroundDark=null;settings.SolidCellDark=null;}else{settings.SolidBackgroundLight=null;settings.SolidCellLight=null;}}
-        private void InvalidateImage(){if(screenImage!=null){screenImage.Dispose();screenImage=null;}if(frostedImage!=null){frostedImage.Dispose();frostedImage=null;}}
+        private void InvalidateImage(){if(liveTexture!=null){liveTexture.Dispose();liveTexture=null;}for(int n=1;n<=8;n++){if(ghostTextures[n]!=null){ghostTextures[n].Dispose();ghostTextures[n]=null;}if(ghostImages[n]!=null){ghostImages[n].Dispose();ghostImages[n]=null;}}if(screenImage!=null){screenImage.Dispose();screenImage=null;}if(frostedImage!=null){frostedImage.Dispose();frostedImage=null;}}
+        private TextureBrush ImageBrush(Bitmap image,int ghost,Point offset){
+            TextureBrush brush;
+            if(ghost==0){if(liveTexture==null){liveTexture=new TextureBrush(image,WrapMode.Clamp);TextureBuilds++;}brush=liveTexture;}
+            else{
+                if(ghostTextures[ghost]==null){
+                    var layer=new Bitmap(image.Width,image.Height,PixelFormat.Format32bppPArgb);
+                    using(var g=Graphics.FromImage(layer))using(var attrs=Opacity(ghost/8f*.45f)){
+                        g.DrawImageUnscaled(frostedImage,0,0);
+                        g.DrawImage(image,new Rectangle(Point.Empty,image.Size),0,0,image.Width,image.Height,GraphicsUnit.Pixel,attrs);
+                    }
+                    ghostImages[ghost]=layer;ghostTextures[ghost]=new TextureBrush(layer,WrapMode.Clamp);TextureBuilds++;
+                }
+                brush=ghostTextures[ghost];
+            }
+            brush.ResetTransform();brush.TranslateTransform(-offset.X,-offset.Y);return brush;
+        }
         internal Bitmap ScreenImage(Size size,Color background){
             if(!HasImage)return null;
             if(screenImage!=null&&screenImage.Size==size&&cachedBackground==background)return screenImage;
@@ -140,23 +160,21 @@ namespace CellularGarden {
             Bitmap image=settings.AppearanceMode==1?ScreenImage(screen,background):null;
             if(image!=null)g.DrawImageUnscaled(FrostedImage(screen,background),-screenOffset.X,-screenOffset.Y);
             using(var alive=new SolidBrush(cellColor)){
-                TextureBrush texture=image==null?null:new TextureBrush(image,WrapMode.Clamp);
-                if(texture!=null)texture.TranslateTransform(-screenOffset.X,-screenOffset.Y);
+                TextureBrush texture=image==null?null:ImageBrush(image,0,screenOffset);
                 var trails=new SolidBrush[9];
-                var ghostTextures=new TextureBrush[9];
+                var frameGhosts=new TextureBrush[9];
                 for(int n=1;n<=8;n++){
                     trails[n]=new SolidBrush(Blend(background,cellColor,n/8f*(palette.Dark?.28f:.24f)));
-                    if(image!=null)using(var attrs=Opacity(n/8f*.45f)){ghostTextures[n]=new TextureBrush(image,new Rectangle(Point.Empty,image.Size),attrs);ghostTextures[n].TranslateTransform(-screenOffset.X,-screenOffset.Y);}
                 }
                 try{
                     for(int y=y0;y<y1;y++)for(int x=x0;x<x1;x++){
                         int i=y*world.Width+x;bool living=world.Cells[i]!=0;int ghost=settings.Trails?world.Ghosts[i]:0;
                         if(!living&&ghost==0)continue;
                         float gap=s>=5?Math.Max(1,s*.14f):.5f;var rect=new RectangleF(o.X+x*s+gap/2,o.Y+y*s+gap/2,s-gap,s-gap);
-                        if(texture!=null)g.FillRectangle(living?texture:ghostTextures[ghost],rect);
+                        if(texture!=null){if(!living&&frameGhosts[ghost]==null)frameGhosts[ghost]=ImageBrush(image,ghost,screenOffset);g.FillRectangle(living?texture:frameGhosts[ghost],rect);}
                         else g.FillRectangle(living?alive:trails[ghost],rect);
                     }
-                }finally{if(texture!=null)texture.Dispose();for(int n=1;n<=8;n++){trails[n].Dispose();if(ghostTextures[n]!=null)ghostTextures[n].Dispose();}}
+                }finally{for(int n=1;n<=8;n++)trails[n].Dispose();}
             }
             if(settings.Grid&&s>=7)using(var pen=new Pen(Color.FromArgb(35,palette.Muted))){for(int x=x0;x<=x1;x++)g.DrawLine(pen,o.X+x*s,Math.Max(0,o.Y),o.X+x*s,Math.Min(viewport.Height,o.Y+world.Height*s));for(int y=y0;y<=y1;y++)g.DrawLine(pen,Math.Max(0,o.X),o.Y+y*s,Math.Min(viewport.Width,o.X+world.Width*s),o.Y+y*s);}
         }

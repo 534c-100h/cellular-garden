@@ -54,7 +54,7 @@ node serve.cjs
 
 ```powershell
 ./scripts/check.ps1
-./scripts/package.ps1 -Version 0.1.0
+./scripts/package.ps1 -Version 0.1.1
 ```
 
 桌面自检覆盖演化规则、视野播种、网格扩展、手动速度输入、独立计时、图片定位、模糊背景、配色对比度与设置恢复。打包脚本先运行检查，再生成 Windows 便携包、网页包和 SHA-256 校验文件，输出位于 `artifacts/`。

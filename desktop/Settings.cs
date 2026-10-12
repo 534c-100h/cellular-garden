@@ -47,6 +47,7 @@ namespace CellularGarden {
                 new System.Drawing.Rectangle(WorldLeft,WorldTop,WorldWidth,WorldHeight);}
         }
         public static string FilePath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"settings.json");
+        internal Settings Copy(){return (Settings)MemberwiseClone();}
         public static Settings Load(){
             try {using(var stream=File.OpenRead(FilePath)){var s=(Settings)new DataContractJsonSerializer(typeof(Settings)).ReadObject(stream);s.Speed=Math.Max(1,Math.Min(30,s.Speed));s.Theme=Math.Max(0,Math.Min(2,s.Theme));s.RuleIndex=Math.Max(0,Math.Min(2,s.RuleIndex));if(float.IsNaN(s.Zoom)||float.IsInfinity(s.Zoom))s.Zoom=1;s.Zoom=Math.Max(.5f,Math.Min(3,s.Zoom));if(float.IsNaN(s.PanX)||float.IsInfinity(s.PanX))s.PanX=0;if(float.IsNaN(s.PanY)||float.IsInfinity(s.PanY))s.PanY=0;s.PanX=Math.Max(-4000,Math.Min(4000,s.PanX));s.PanY=Math.Max(-4000,Math.Min(4000,s.PanY));return s;}}
             catch{return new Settings();}
