@@ -1,0 +1,28 @@
+# Personal state, imported wallpaper and diagnostics
+desktop/settings*.json*
+desktop/desktop-status.json
+desktop/error.log
+desktop/test-settings.json*
+desktop/test-results.txt
+desktop/preview-*.png
+desktop/wallpaper-image.png*
+desktop/appearance-test-*/
+
+# Build output
+artifacts/
+desktop/*.exe
+desktop/*.pdb
+*.zip
+
+# Local tools and editor metadata
+.openai/
+.codex/
+.claude/
+.vs/
+.vscode/
+node_modules/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db

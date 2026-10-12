@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const {evolve,RULES,PATTERNS}=require('./dist/engine.js');
+const grid=(points,w=9,h=9)=>{const a=new Uint8Array(w*h);points.forEach(([x,y])=>a[y*w+x]=1);return a;};
+const run=(a,n,w=9,h=9,wrap=false,rule=RULES.life)=>{for(let i=0;i<n;i++)a=evolve(a,w,h,rule,wrap);return a;};
+const block=grid([[3,3],[3,4],[4,3],[4,4]]);assert.deepEqual(run(block,10),block);
+const blinker=grid([[3,4],[4,4],[5,4]]);assert.deepEqual(run(blinker,1),grid([[4,3],[4,4],[4,5]]));assert.deepEqual(run(blinker,2),blinker);
+const glider=grid([[2,1],[3,2],[1,3],[2,3],[3,3]]);assert.deepEqual(run(glider,4),grid([[3,2],[4,3],[2,4],[3,4],[4,4]]));
+const edge=grid([[8,4],[0,4],[1,4]]);assert.equal(run(edge,1,9,9,true)[4*9],1);assert.equal(run(edge,1)[4*9],0);
+const six=grid([[3,3],[4,3],[5,3],[3,4],[5,4],[4,5]]);assert.equal(run(six,1,9,9,false,RULES.highlife)[40],1);assert.equal(run(six,1)[40],0);
+assert.equal(run(block,1,9,9,false,RULES.seeds)[30],0);
+let pulsar=grid([],25,25);PATTERNS.pulsar.forEach((row,y)=>[...row].forEach((v,x)=>{if(v==='O')pulsar[(y+5)*25+x+5]=1;}));assert.deepEqual(run(pulsar,3,25,25),pulsar);
+console.log('PASS: still life, oscillator, glider translation, boundary wrapping, HighLife birth, Seeds death, pulsar period.');

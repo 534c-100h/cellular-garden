@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111715"><meta name="description" content="在细胞花园探索元胞自动机：绘制、播种，观察简单规则如何生成复杂生命。"><title>细胞花园 · Cellular Garden</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><a class="brand" href="./"><span class="brand-icon">⠿</span>细胞花园<span class="brand-en">CELLULAR GARDEN</span></a><span class="header-note"><i></i> 一个关于涌现的实验</span></header>
+<main>
+<section class="intro"><div><div class="eyebrow">INTERACTIVE LAB / 001</div><h1>简单规则，<span>生生不息。</span></h1><p>种下一点生命，观察秩序如何从混沌中诞生。</p></div><div class="intro-tag">元胞自动机<span>CELLULAR AUTOMATA</span></div></section>
+<div class="workspace">
+<section class="experiment" aria-label="元胞自动机画布">
+<div class="canvas-top"><span><i id="status-dot"></i><span id="status">已暂停</span></span><span id="rule-label">CONWAY’S LIFE · B3/S23</span><span>80 × 52</span></div>
+<div class="canvas-wrap"><canvas id="world" width="960" height="624" aria-label="生命网格，点击或拖动绘制细胞；也可使用右侧预设图案" tabindex="0"></canvas><div class="canvas-hint" id="hint">点击或拖动，种下你的第一颗细胞</div></div>
+<div class="transport"><div class="playback"><button id="play" class="primary" title="播放 / 暂停（空格）">▶ 开始演化</button><button id="step" class="icon-button" title="前进一步（N）" aria-label="前进一步">▸│</button><button id="reset" class="icon-button" title="恢复本次初始图案（R）" aria-label="恢复初始图案">↺</button></div><label class="speed">速度 <input id="speed" type="range" min="1" max="30" value="10"><output id="speed-value">10</output><span>代/秒</span></label></div>
+<div class="stats"><div><span>演化代数</span><strong id="generation">0000</strong></div><div><span>存活细胞</span><strong id="population">0</strong></div><div><span>生命密度</span><strong id="density">0.0<small>%</small></strong></div><div class="spark-stat"><span>种群变化</span><svg id="chart" viewBox="0 0 160 34" role="img" aria-label="最近 100 代的存活细胞数量趋势"><path id="chart-path" fill="none" stroke="#b9e78c" stroke-width="1.6"/></svg></div></div>
+</section>
+<aside>
+<section class="panel"><div class="section-label"><span>01</span> 演化规则</div><label class="sr-only" for="rules">选择演化规则</label><select id="rules"><option value="life">康威生命游戏</option><option value="highlife">HighLife · 高等生命</option><option value="seeds">Seeds · 种子</option></select><div class="rule-code" id="rule-code">B3 / S23</div><p class="rule-description" id="rule-description">拥有 3 个邻居的空格诞生生命；拥有 2 或 3 个邻居的细胞继续存活。</p><label class="switch-row">边缘循环 <input id="wrap" type="checkbox" checked><span class="toggle"></span></label><p class="micro">开启后，细胞可从一侧穿越到另一侧。</p></section>
+<section class="panel"><div class="section-label"><span>02</span> 播种一个图案</div><div class="presets"><button data-pattern="glider"><span>⠏</span>滑翔机<small>GLIDER</small></button><button data-pattern="pulsar"><span>✣</span>脉冲星<small>PULSAR</small></button><button data-pattern="gun"><span>⠷</span>滑翔机枪<small>GOSPER GUN</small></button><button data-pattern="r"><span>⌘</span>R 五连块<small>R-PENTOMINO</small></button></div><div class="secondary-actions"><button id="random">⤨ 随机播种</button><button id="clear">清空画布</button></div></section>
+<section class="panel tool-panel"><div class="section-label"><span>03</span> 自由绘制</div><div class="segmented" role="group" aria-label="画笔模式"><button id="draw" class="selected" aria-pressed="true">＋ 生命画笔</button><button id="erase" aria-pressed="false">－ 橡皮擦</button></div><label class="switch-row trail-row">显示生命余迹 <input id="trails" type="checkbox" checked><span class="toggle"></span></label><div class="legend"><span><i class="alive"></i>存活</span><span><i class="fading"></i>消逝</span><span><i class="empty"></i>空白</span></div></section>
+</aside>
+</div>
+<footer><p><span>↳</span> 每个细胞只关心身边的 8 个邻居，复杂的世界由此开始。</p><div><kbd>SPACE</kbd> 播放 / 暂停 <kbd>N</kbd> 下一代 <kbd>R</kbd> 重置</div></footer>
+</main><script src="engine.js"></script><script src="app.js"></script></body></html>
