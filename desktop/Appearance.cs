@@ -176,7 +176,16 @@ namespace CellularGarden {
                     }
                 }finally{for(int n=1;n<=8;n++)trails[n].Dispose();}
             }
-            if(settings.Grid&&s>=7)using(var pen=new Pen(Color.FromArgb(35,palette.Muted))){for(int x=x0;x<=x1;x++)g.DrawLine(pen,o.X+x*s,Math.Max(0,o.Y),o.X+x*s,Math.Min(viewport.Height,o.Y+world.Height*s));for(int y=y0;y<=y1;y++)g.DrawLine(pen,Math.Max(0,o.X),o.Y+y*s,Math.Min(viewport.Width,o.X+world.Width*s),o.Y+y*s);}
+            if(settings.Grid){
+                // Outline the same inset square used by living cells, across the whole visible canvas.
+                float gap=s>=5?Math.Max(1,s*.14f):.5f;
+                Color outline=WallpaperAppearance.Luminance(background)>.45?Color.Black:Color.White;
+                using(var pen=new Pen(Color.FromArgb(45,outline),1f)){
+                    Rectangle visible=view.VisibleCells;
+                    for(int y=visible.Top;y<visible.Bottom;y++)for(int x=visible.Left;x<visible.Right;x++)
+                        g.DrawRectangle(pen,view.Origin.X+x*s+gap/2,view.Origin.Y+y*s+gap/2,s-gap,s-gap);
+                }
+            }
         }
         public void Dispose(){if(source!=null)source.Dispose();InvalidateImage();}
     }
